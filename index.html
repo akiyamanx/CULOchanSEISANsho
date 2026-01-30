@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>出張費精算請求書</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a5f7a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
+            background: linear-gradient(135deg, #1a5f7a 0%, #2d8a9e 100%);
+            min-height: 100vh;
+            padding: 10px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; color: white; font-size: 1.3rem; margin-bottom: 15px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .card { background: white; border-radius: 15px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .card-title { font-size: 1rem; font-weight: bold; color: #1a5f7a; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #1a5f7a; }
+        .form-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .form-group { flex: 1; min-width: 120px; }
+        .form-group.small { flex: 0 0 70px; min-width: 70px; }
+        label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; }
+        input, select, textarea { width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 8px; font-size: 1rem; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #1a5f7a; }
+        input:read-only { background: #e9ecef; }
+        .expense-row { background: #f8f9fa; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+        .expense-row-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .row-number { background: #1a5f7a; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .delete-row { background: #dc3545; color: white; border: none; width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; }
+        .btn { padding: 12px 20px; border: none; border-radius: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-primary { background: linear-gradient(135deg, #1a5f7a, #2d8a9e); color: white; }
+        .btn-success { background: linear-gradient(135deg, #28a745, #20c997); color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn:active { transform: scale(0.98); }
+        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn-row .btn { flex: 1; min-width: 140px; }
+        .btn-etc { background: linear-gradient(135deg, #ff6b35, #f7931e); color: white; }
+        .btn-warning { background: linear-gradient(135deg, #ffc107, #fd7e14); color: #333; }
+        .btn-info { background: linear-gradient(135deg, #17a2b8, #20c997); color: white; }
+        .btn-danger { background: linear-gradient(135deg, #dc3545, #c82333); color: white; }
+        .draft-list { margin-top: 10px; }
+        .draft-item { display: flex; justify-content: space-between; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 8px; margin-bottom: 8px; }
+        .draft-info { flex: 1; cursor: pointer; }
+        .draft-info:hover { color: #1a5f7a; }
+        .draft-title { font-weight: bold; font-size: 0.9rem; }
+        .draft-date { font-size: 0.75rem; color: #666; }
+        .draft-delete { background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-size: 0.8rem; cursor: pointer; }
+        .draft-delete:hover { background: #c82333; }
+        .total-display { background: linear-gradient(135deg, #1a5f7a, #2d8a9e); color: white; padding: 15px; border-radius: 10px; text-align: center; margin-top: 10px; }
+        .total-label { font-size: 0.9rem; opacity: 0.9; }
+        .total-amount { font-size: 2rem; font-weight: bold; }
+        .voice-hint { font-size: 0.75rem; color: #888; text-align: center; margin-top: 5px; }
+        .auto-calc { font-size: 0.75rem; color: #28a745; margin-top: 2px; }
+        .loading { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; flex-direction: column; color: white; }
+        .loading.show { display: flex; }
+        .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* PDF出力用 */
+        #pdf-content {
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            width: 1050px;
+            background: white;
+            padding: 20px 25px;
+            font-family: 'MS Gothic', 'ＭＳ ゴシック', 'Hiragino Kaku Gothic ProN', sans-serif;
+            font-size: 11px;
+        }
+        .pdf-company { font-size: 13px; margin-bottom: 10px; }
+        .pdf-title { text-align: center; font-size: 20px; font-weight: bold; letter-spacing: 8px; margin-bottom: 12px; }
+        .pdf-table { width: 100%; border-collapse: collapse; border: 1px solid black; }
+        .pdf-table th, .pdf-table td { border: 1px solid black; padding: 3px 5px; text-align: center; vertical-align: middle; font-size: 10px; font-weight: normal; }
+        .cell-content { white-space: pre-line; line-height: 1.3; }
+        .header-sub { font-size: 8px; }
+        /* 2分割セル - 縦線をセルの上下端まで繋げる */
+        .split-cell-wrapper {
+            padding: 0 !important;
+        }
+        .split-cell {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+        .split-cell > div {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .split-cell > div:first-child {
+            border-right: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 出張費精算請求書</h1>
+        
+        <div class="card">
+            <div class="card-title">📋 基本情報</div>
+            <div class="form-row">
+                <div class="form-group"><label>提出日</label><input type="date" id="submitDate"></div>
+                <div class="form-group"><label>SS名</label><input type="text" id="ssName" value="千葉西SS"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>行先（お客様名）</label>
+                    <textarea id="destination" rows="2" placeholder="逗子市&#10;クラフティ北村"></textarea>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>氏名</label><input type="text" id="employeeName" value="小出晃也"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">🚃 交通費明細</div>
+            <a href="https://www.etc-meisai.jp/" target="_blank" class="btn btn-etc" style="width: 100%; margin-bottom: 10px; text-decoration: none;">
+                🛣️ ETC利用照会サービスを開く
+            </a>
+            <div id="expense-rows"></div>
+            <button class="btn btn-primary" onclick="addExpenseRow()" style="width: 100%; margin-top: 10px;">➕ 行を追加</button>
+            <p class="voice-hint">💡 各入力欄をタップして音声入力できます</p>
+        </div>
+        
+        <div class="card">
+            <div class="total-display">
+                <div class="total-label">合計金額</div>
+                <div class="total-amount" id="grandTotal">¥0</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="btn-row">
+                <button class="btn btn-success" onclick="generatePDF()">📄 PDF出力</button>
+                <button class="btn btn-secondary" onclick="clearAll()">🗑️ クリア</button>
+            </div>
+            <div class="btn-row" style="margin-top: 10px;">
+                <button class="btn btn-warning" onclick="saveDraft()">💾 下書き保存</button>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">📁 下書き一覧</div>
+            <div id="draft-list" class="draft-list">
+                <p style="color: #888; text-align: center;">下書きはありません</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- PDF出力用 - 11列構成 -->
+    <div id="pdf-content">
+        <div class="pdf-company">日本ROメンテナンスサービス株式会社　御中</div>
+        <div class="pdf-title">出張費精算請求書</div>
+        
+        <table class="pdf-table">
+            <!-- 1行目 -->
+            <tr style="height:20px;">
+                <td>提出日</td>
+                <td colspan="5" style="text-align:left; padding-left:10px;"><span id="pdf-date"></span></td>
+                <td>SS名</td>
+                <td colspan="2"><span id="pdf-ss"></span></td>
+                <td style="height:20px; padding:0;"><table style="width:100%; height:100%; border-collapse:collapse;"><tr><td style="border-right:1px solid black; width:50%;"></td><td style="width:50%;">経理</td></tr></table></td>
+                <td>本部</td>
+            </tr>
+            <!-- 2行目 -->
+            <tr>
+                <td colspan="2" style="height:40px;">行先<br><span class="header-sub">（お客様名）</span></td>
+                <td colspan="4" style="text-align:left; padding-left:10px;"><span id="pdf-dest"></span></td>
+                <td>氏名</td>
+                <td colspan="2" style="text-align:left; padding-left:5px;"><span id="pdf-name"></span>　印</td>
+                <td style="height:40px; padding:0;"><table style="width:100%; height:100%; border-collapse:collapse;"><tr><td style="border-right:1px solid black; width:50%;"></td><td style="width:50%;"></td></tr></table></td>
+                <td style="height:40px;"></td>
+            </tr>
+            <!-- 3行目：列ヘッダー -->
+            <tr style="height:45px;">
+                <td style="width:40px;">月</td>
+                <td style="width:40px;">日</td>
+                <td style="width:90px;">利用交通機関</td>
+                <td style="width:70px;">走行距離</td>
+                <td style="width:60px;">高速代<br><span class="header-sub">（枚数）</span></td>
+                <td style="width:70px;">その他<br><span class="header-sub">（タクシー・<br>バス等）</span></td>
+                <td style="width:55px;">船賃</td>
+                <td style="width:55px;">電車賃</td>
+                <td style="width:55px;">航空賃</td>
+                <td style="width:70px;">宿泊料<br><span class="header-sub">（宿泊先）</span></td>
+                <td style="width:60px;">合計</td>
+            </tr>
+            <!-- データ行 -->
+            <tbody id="pdf-table-body"></tbody>
+            <!-- 合計行 -->
+            <tr style="height:40px;">
+                <td colspan="2">合　　計</td>
+                <td></td>
+                <td id="pdf-total-distance"></td>
+                <td id="pdf-total-highway"></td>
+                <td id="pdf-total-other"></td>
+                <td id="pdf-total-ship"></td>
+                <td id="pdf-total-train"></td>
+                <td id="pdf-total-air"></td>
+                <td id="pdf-total-hotel"></td>
+                <td id="pdf-total-all"></td>
+            </tr>
+            <!-- 備考欄 -->
+            <tr>
+                <td colspan="11" style="height:60px; text-align:left; vertical-align:top; padding:6px;">
+                    <span style="font-weight:bold;">【備考欄】</span>
+                </td>
+            </tr>
+        </table>
+    </div>
+    
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <div>PDF生成中...</div>
+    </div>
+    
+    <script>
+        let rowCount = 0;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('submitDate').value = new Date().toISOString().split('T')[0];
+            addExpenseRow();
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW登録失敗:', err));
+            }
+        });
+        
+        function calcGasCost(distance) {
+            const km = parseInt(distance) || 0;
+            if (km >= 100) {
+                return (km - 100) * 30;
+            }
+            return 0;
+        }
+        
+        function addExpenseRow() {
+            rowCount++;
+            const container = document.getElementById('expense-rows');
+            const row = document.createElement('div');
+            row.className = 'expense-row';
+            row.id = `row-${rowCount}`;
+            row.innerHTML = `
+                <div class="expense-row-header">
+                    <span class="row-number">${rowCount}</span>
+                    <button class="delete-row" onclick="deleteRow(${rowCount})">×</button>
+                </div>
+                <div class="form-row">
+                    <div class="form-group small"><label>月</label><input type="number" class="month" placeholder="12" min="1" max="12"></div>
+                    <div class="form-group small"><label>日</label><input type="number" class="day" placeholder="15" min="1" max="31"></div>
+                    <div class="form-group"><label>利用交通機関</label><input type="text" class="transport" placeholder="高速道路"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>走行距離（キロ）</label>
+                        <input type="number" class="distance" placeholder="186" onchange="updateGasCost(this)">
+                        <div class="auto-calc">※100キロ以上で自動計算</div>
+                    </div>
+                    <div class="form-group">
+                        <label>ガソリン代（自動計算）</label>
+                        <input type="number" class="gas-cost" placeholder="0" readonly>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>高速代（カンマ区切りで複数可）</label><input type="text" class="highway" placeholder="5110" onchange="calculateTotals()"></div>
+                    <div class="form-group small"><label>枚数</label><input type="number" class="highway-count" placeholder="8"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>その他（タクシー等）</label><input type="number" class="other" placeholder="0" onchange="calculateTotals()"></div>
+                    <div class="form-group"><label>船賃</label><input type="number" class="ship" placeholder="0" onchange="calculateTotals()"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>電車賃</label><input type="number" class="train" placeholder="0" onchange="calculateTotals()"></div>
+                    <div class="form-group"><label>航空賃</label><input type="number" class="air" placeholder="0" onchange="calculateTotals()"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>宿泊料</label><input type="number" class="hotel" placeholder="0" onchange="calculateTotals()"></div>
+                    <div class="form-group"><label>宿泊先</label><input type="text" class="hotel-name" placeholder=""></div>
+                </div>
+                <div style="text-align:right; margin-top:8px; font-weight:bold; color:#1a5f7a;">行合計: <span class="row-total">¥0</span></div>
+            `;
+            container.appendChild(row);
+            updateRowNumbers();
+        }
+        
+        function updateGasCost(input) {
+            const row = input.closest('.expense-row');
+            const distance = input.value;
+            const gasCost = calcGasCost(distance);
+            row.querySelector('.gas-cost').value = gasCost || '';
+            calculateTotals();
+        }
+        
+        function deleteRow(id) {
+            const row = document.getElementById(`row-${id}`);
+            if (row && document.querySelectorAll('.expense-row').length > 1) {
+                row.remove();
+                updateRowNumbers();
+                calculateTotals();
+            }
+        }
+        
+        function updateRowNumbers() {
+            document.querySelectorAll('.expense-row').forEach((row, i) => {
+                row.querySelector('.row-number').textContent = i + 1;
+            });
+        }
+        
+        function parseHighway(value) {
+            if (!value) return 0;
+            return value.split(/[,、，]/).reduce((sum, v) => sum + (parseInt(v.trim()) || 0), 0);
+        }
+        
+        function calculateTotals() {
+            let grandTotal = 0;
+            document.querySelectorAll('.expense-row').forEach(row => {
+                const gasCost = parseInt(row.querySelector('.gas-cost').value) || 0;
+                const highway = parseHighway(row.querySelector('.highway').value);
+                const other = parseInt(row.querySelector('.other').value) || 0;
+                const ship = parseInt(row.querySelector('.ship').value) || 0;
+                const train = parseInt(row.querySelector('.train').value) || 0;
+                const air = parseInt(row.querySelector('.air').value) || 0;
+                const hotel = parseInt(row.querySelector('.hotel').value) || 0;
+                const rowTotal = gasCost + highway + other + ship + train + air + hotel;
+                row.querySelector('.row-total').textContent = `¥${rowTotal.toLocaleString()}`;
+                grandTotal += rowTotal;
+            });
+            document.getElementById('grandTotal').textContent = `¥${grandTotal.toLocaleString()}`;
+        }
+        
+        async function generatePDF() {
+            const loading = document.getElementById('loading');
+            loading.classList.add('show');
+            
+            try {
+                const submitDate = document.getElementById('submitDate').value;
+                const dateObj = new Date(submitDate);
+                const year = dateObj.getFullYear();
+                const month = dateObj.getMonth() + 1;
+                const day = dateObj.getDate();
+                
+                document.getElementById('pdf-date').textContent = `${year}年　　${month}月　　${day}日`;
+                document.getElementById('pdf-ss').textContent = document.getElementById('ssName').value;
+                document.getElementById('pdf-dest').innerHTML = document.getElementById('destination').value.replace(/\n/g, '<br>');
+                document.getElementById('pdf-name').textContent = document.getElementById('employeeName').value;
+                
+                const tbody = document.getElementById('pdf-table-body');
+                tbody.innerHTML = '';
+                
+                const expenseRows = document.querySelectorAll('.expense-row');
+                let totals = { gasCost: 0, highway: 0, other: 0, ship: 0, train: 0, air: 0, hotel: 0, all: 0 };
+                
+                expenseRows.forEach(row => {
+                    const monthVal = row.querySelector('.month').value || '';
+                    const dayVal = row.querySelector('.day').value || '';
+                    const transport = row.querySelector('.transport').value || '';
+                    const distance = row.querySelector('.distance').value || '';
+                    const gasCost = parseInt(row.querySelector('.gas-cost').value) || 0;
+                    const highwayVal = row.querySelector('.highway').value || '';
+                    const highwayCount = row.querySelector('.highway-count').value || '';
+                    const other = parseInt(row.querySelector('.other').value) || 0;
+                    const ship = parseInt(row.querySelector('.ship').value) || 0;
+                    const train = parseInt(row.querySelector('.train').value) || 0;
+                    const air = parseInt(row.querySelector('.air').value) || 0;
+                    const hotel = parseInt(row.querySelector('.hotel').value) || 0;
+                    const hotelName = row.querySelector('.hotel-name').value || '';
+                    
+                    const highway = parseHighway(highwayVal);
+                    const rowTotal = gasCost + highway + other + ship + train + air + hotel;
+                    
+                    totals.gasCost += gasCost;
+                    totals.highway += highway;
+                    totals.other += other;
+                    totals.ship += ship;
+                    totals.train += train;
+                    totals.air += air;
+                    totals.hotel += hotel;
+                    totals.all += rowTotal;
+                    
+                    let distanceDisplay = '';
+                    if (distance) distanceDisplay = distance + 'キロ';
+                    if (gasCost) distanceDisplay += '\n' + gasCost + '円';
+                    
+                    let highwayDisplay = '';
+                    if (highwayVal) {
+                        const amounts = highwayVal.split(/[,、，]/).map(v => v.trim()).filter(v => v);
+                        highwayDisplay = amounts.map(a => parseInt(a) + '円').join('\n');
+                        if (highwayCount) highwayDisplay += '\n' + highwayCount + '枚';
+                    }
+                    
+                    let hotelDisplay = '';
+                    if (hotel) {
+                        hotelDisplay = hotel + '円';
+                        if (hotelName) hotelDisplay += '\n' + hotelName;
+                    }
+                    
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="height:50px;">${monthVal}</td>
+                        <td style="height:50px;">${dayVal}</td>
+                        <td style="height:50px;">${transport}</td>
+                        <td style="height:50px;"><span class="cell-content">${distanceDisplay}</span></td>
+                        <td style="height:50px;"><span class="cell-content">${highwayDisplay}</span></td>
+                        <td style="height:50px;">${other ? other + '円' : ''}</td>
+                        <td style="height:50px;">${ship ? ship + '円' : ''}</td>
+                        <td style="height:50px;">${train ? train + '円' : ''}</td>
+                        <td style="height:50px;">${air ? air + '円' : ''}</td>
+                        <td style="height:50px;"><span class="cell-content">${hotelDisplay}</span></td>
+                        <td style="height:50px;">${rowTotal ? rowTotal + '円' : ''}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                
+                for (let i = expenseRows.length; i < 6; i++) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = '<td style="height:50px;"></td>'.repeat(11);
+                    tbody.appendChild(tr);
+                }
+                
+                document.getElementById('pdf-total-distance').textContent = totals.gasCost ? totals.gasCost + '円' : '';
+                document.getElementById('pdf-total-highway').textContent = totals.highway ? totals.highway + '円' : '';
+                document.getElementById('pdf-total-other').textContent = totals.other ? totals.other + '円' : '';
+                document.getElementById('pdf-total-ship').textContent = totals.ship ? totals.ship + '円' : '';
+                document.getElementById('pdf-total-train').textContent = totals.train ? totals.train + '円' : '';
+                document.getElementById('pdf-total-air').textContent = totals.air ? totals.air + '円' : '';
+                document.getElementById('pdf-total-hotel').textContent = totals.hotel ? totals.hotel + '円' : '';
+                document.getElementById('pdf-total-all').textContent = totals.all ? totals.all + '円' : '';
+                
+                const pdfContent = document.getElementById('pdf-content');
+                pdfContent.style.left = '0';
+                await new Promise(r => setTimeout(r, 100));
+                
+                const canvas = await html2canvas(pdfContent, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+                pdfContent.style.left = '-9999px';
+                
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('landscape', 'mm', 'a4');
+                const imgData = canvas.toDataURL('image/png');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                const ratio = Math.min((pdfWidth - 10) / canvas.width, (pdfHeight - 10) / canvas.height);
+                const imgX = (pdfWidth - canvas.width * ratio) / 2;
+                pdf.addImage(imgData, 'PNG', imgX, 5, canvas.width * ratio, canvas.height * ratio);
+                
+                pdf.save(`交通費精算_${year}${String(month).padStart(2,'0')}${String(day).padStart(2,'0')}.pdf`);
+            } catch (error) {
+                console.error('PDF生成エラー:', error);
+                alert('PDF生成に失敗しました: ' + error.message);
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+        
+        function clearAll() {
+            if (confirm('すべての入力をクリアしますか？')) {
+                document.getElementById('destination').value = '';
+                document.getElementById('expense-rows').innerHTML = '';
+                rowCount = 0;
+                addExpenseRow();
+                calculateTotals();
+            }
+        }
+        
+        // 下書き保存
+        function saveDraft() {
+            const destination = document.getElementById('destination').value;
+            const submitDate = document.getElementById('submitDate').value;
+            
+            // 行データを収集
+            const rows = [];
+            document.querySelectorAll('.expense-row').forEach(row => {
+                rows.push({
+                    month: row.querySelector('.month').value,
+                    day: row.querySelector('.day').value,
+                    transport: row.querySelector('.transport').value,
+                    distance: row.querySelector('.distance').value,
+                    gasCost: row.querySelector('.gas-cost').value,
+                    highway: row.querySelector('.highway').value,
+                    highwayCount: row.querySelector('.highway-count').value,
+                    other: row.querySelector('.other').value,
+                    ship: row.querySelector('.ship').value,
+                    train: row.querySelector('.train').value,
+                    air: row.querySelector('.air').value,
+                    hotel: row.querySelector('.hotel').value,
+                    hotelName: row.querySelector('.hotel-name').value
+                });
+            });
+            
+            const draft = {
+                id: Date.now(),
+                date: new Date().toLocaleString('ja-JP'),
+                submitDate: submitDate,
+                ssName: document.getElementById('ssName').value,
+                destination: destination,
+                employeeName: document.getElementById('employeeName').value,
+                rows: rows
+            };
+            
+            // 既存の下書きを取得
+            let drafts = JSON.parse(localStorage.getItem('travelExpenseDrafts') || '[]');
+            drafts.unshift(draft);
+            
+            // 最大20件まで保存
+            if (drafts.length > 20) {
+                drafts = drafts.slice(0, 20);
+            }
+            
+            localStorage.setItem('travelExpenseDrafts', JSON.stringify(drafts));
+            
+            alert('下書きを保存しました！');
+            loadDraftList();
+        }
+        
+        // 下書き一覧を読み込み
+        function loadDraftList() {
+            const drafts = JSON.parse(localStorage.getItem('travelExpenseDrafts') || '[]');
+            const listEl = document.getElementById('draft-list');
+            
+            if (drafts.length === 0) {
+                listEl.innerHTML = '<p style="color: #888; text-align: center;">下書きはありません</p>';
+                return;
+            }
+            
+            listEl.innerHTML = drafts.map((draft, index) => `
+                <div class="draft-item">
+                    <div class="draft-info" onclick="loadDraft(${draft.id})">
+                        <div class="draft-title">${draft.destination || '（行先未入力）'}</div>
+                        <div class="draft-date">${draft.date}</div>
+                    </div>
+                    <button class="draft-delete" onclick="deleteDraft(${draft.id})">🗑️ 削除</button>
+                </div>
+            `).join('');
+        }
+        
+        // 下書きを読み込み
+        function loadDraft(id) {
+            const drafts = JSON.parse(localStorage.getItem('travelExpenseDrafts') || '[]');
+            const draft = drafts.find(d => d.id === id);
+            
+            if (!draft) {
+                alert('下書きが見つかりません');
+                return;
+            }
+            
+            if (!confirm('現在の入力内容を破棄して下書きを読み込みますか？')) {
+                return;
+            }
+            
+            // 基本情報を復元
+            document.getElementById('submitDate').value = draft.submitDate || new Date().toISOString().split('T')[0];
+            document.getElementById('ssName').value = draft.ssName || '千葉西SS';
+            document.getElementById('destination').value = draft.destination || '';
+            document.getElementById('employeeName').value = draft.employeeName || '小出晃也';
+            
+            // 行データを復元
+            document.getElementById('expense-rows').innerHTML = '';
+            rowCount = 0;
+            
+            if (draft.rows && draft.rows.length > 0) {
+                draft.rows.forEach(rowData => {
+                    addExpenseRow();
+                    const row = document.querySelector(`#row-${rowCount}`);
+                    row.querySelector('.month').value = rowData.month || '';
+                    row.querySelector('.day').value = rowData.day || '';
+                    row.querySelector('.transport').value = rowData.transport || '';
+                    row.querySelector('.distance').value = rowData.distance || '';
+                    row.querySelector('.gas-cost').value = rowData.gasCost || '';
+                    row.querySelector('.highway').value = rowData.highway || '';
+                    row.querySelector('.highway-count').value = rowData.highwayCount || '';
+                    row.querySelector('.other').value = rowData.other || '';
+                    row.querySelector('.ship').value = rowData.ship || '';
+                    row.querySelector('.train').value = rowData.train || '';
+                    row.querySelector('.air').value = rowData.air || '';
+                    row.querySelector('.hotel').value = rowData.hotel || '';
+                    row.querySelector('.hotel-name').value = rowData.hotelName || '';
+                });
+            } else {
+                addExpenseRow();
+            }
+            
+            calculateTotals();
+            alert('下書きを読み込みました！');
+        }
+        
+        // 下書きを削除
+        function deleteDraft(id) {
+            if (!confirm('この下書きを削除しますか？')) {
+                return;
+            }
+            
+            let drafts = JSON.parse(localStorage.getItem('travelExpenseDrafts') || '[]');
+            drafts = drafts.filter(d => d.id !== id);
+            localStorage.setItem('travelExpenseDrafts', JSON.stringify(drafts));
+            
+            loadDraftList();
+        }
+        
+        // 初期化時に下書き一覧を読み込み
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDraftList();
+        });
+    </script>
+</body>
+</html>
